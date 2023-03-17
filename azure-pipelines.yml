@@ -1,0 +1,65 @@
+parameters:
+  - name: targetUrl
+    displayName: 'Target Url'
+    type: string
+    default: https://www.example.com
+
+  - name: scanScript
+    displayName: 'Scan Type'
+    type: string
+    default: zap-baseline
+    values:
+      - zap-baseline
+      - zap-full-scan
+
+  - name: useAjaxSpider
+    displayName: 'Use Ajax Spider'
+    type: boolean
+    default: true
+
+steps:
+  - bash: |
+      chmod -R 777  ./
+      docker run --rm -v $(pwd):/zap/wrk/:rw -v $SRC/config/:/zap/cfg/:rw -t owasp/zap2docker-stable ${{ parameters.scanScript }}.py -d  ${{ replace(replace(parameters.useAjaxSpider, 'True', '-j'), 'False', '') }} -c ../cfg/zap-rules.conf -p ../cfg/zap-progress.json -t ${{ parameters.targetUrl }} -x zap-report.xml -r zap-report.html -w zap-report.md
+    displayName: target www.example.com
+    workingDirectory: $(Build.ArtifactStagingDirectory)
+    env:
+      SRC: $(Build.SourcesDirectory)
+  
+  - powershell: |
+      $XslPath = "$Env:SRC/owasp_to_nunit.xslt" 
+      $XmlInputPath = "zap-report.xml"
+      $XmlOutputPath = "$Env:SRC/xml_report.xml"
+      $XslTransform = New-Object System.Xml.Xsl.XslCompiledTransform
+      $XslTransform.Load($XslPath)
+      $XslTransform.Transform($XmlInputPath, $XmlOutputPath)
+    condition: succeededOrFailed()
+    displayName: 'Convert Report'
+    workingDirectory: $(Build.ArtifactStagingDirectory)
+    env:
+      SRC: $(Build.SourcesDirectory)
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    displayName: 'Publish Test Results'
+    inputs:
+      testResultsFormat: 'NUnit'
+      testResultsFiles: 'xml_report.xml'
+
+  - publish: $(Build.ArtifactStagingDirectory)
+    condition: succeededOrFailed()
+    artifact: Reports
+    displayName: 'Publish Reports'
+
+  - task: CreateWorkItem@1
+    condition: failed()
+    displayName: 'Create Bug'
+    inputs:
+      workItemType: 'Bug'
+      title: 'OWASP ZAP Scanning Alerts'
+      associate: true
+      associationType: 'foundInBuild'
+      addAttachments: true
+      attachmentsFolder: '$(Build.ArtifactStagingDirectory)'
+      attachments: 'zap-report.*'
+      keyFields: 'System.Title'

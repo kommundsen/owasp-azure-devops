@@ -1,0 +1,9 @@
+{
+	"site" : "www.example.com",
+	"issues" : [{
+		"id" : "10110",
+		"name" : "Dangerous JS Functions",
+		"state" : "inprogress",
+		"link": "https://www.example.com/bugtracker/issue=1234"
+	}]
+}
